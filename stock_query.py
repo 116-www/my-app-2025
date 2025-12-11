@@ -1,184 +1,352 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import os
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-import altair as alt  # 引入Altair实现高级图表（无参数冲突）
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import warnings
+warnings.filterwarnings('ignore')
 
-# ---------------------- 页面高级配置 ----------------------
+# 页面基础配置
 st.set_page_config(
-    page_title="上市公司数字化转型分析系统",
-    page_icon="📊",
+    page_title="上市公司数字化转型分析平台",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 自定义CSS样式（高级UI）
-def add_custom_style():
-    st.markdown("""
+# 自定义CSS美化（更精致）
+st.markdown("""
     <style>
-    .card {background-color: #ffffff; border-radius: 16px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);}
-    .section-title {font-size: 1.6rem; font-weight: 700; color: #2d3748; margin-bottom: 16px; border-left: 4px solid #4299e1; padding-left: 12px;}
-    .stDataFrame {border-radius: 12px; border: none; font-size: 0.9rem;}
-    .css-1d391kg {padding-top: 2rem; background-color: #f8fafc;}
-    .stButton > button {background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%); color: white; border-radius: 8px; border: none; padding: 8px 16px;}
+    .main {background-color: #f5f7fa;}
+    .sidebar .sidebar-content {background-color: #ffffff; color: #000000;} /* 侧边栏背景改为白色，字体黑色 */
+    h1 {color: #1e3a8a; font-size: 2.8rem; font-weight: 800; text-align: center; margin-bottom: 1rem;}
+    h2 {color: #3b82f6; font-size: 1.8rem; font-weight: 700; border-left: 4px solid #3b82f6; padding-left: 0.8rem;}
+    h3 {color: #1e40af; font-size: 1.4rem; font-weight: 600; margin-top: 1.2rem;}
+    .card {
+        background-color: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+    .stButton>button {
+        background-color: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 20px;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+    .stButton>button:hover {
+        background-color: #2563eb;
+        transform: translateY(-2px);
+    }
+    .stTextInput>div>div>input {
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        padding: 8px 12px;
+    }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-def main():
-    add_custom_style()
-
-    # 侧边栏筛选
-    with st.sidebar:
-        st.header("🔍 数据筛选")
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        file_path = os.path.join(current_dir, "总词频统计表.xlsx")
-        try:
-            df_temp = pd.read_excel(file_path)
-            df_temp = df_temp.fillna(0)
-            min_year = int(df_temp["年份"].min())
-            max_year = int(df_temp["年份"].max())
-        except Exception as e:
-            st.error(f"❌ 读取失败：{str(e)}")
-            return
-
-        selected_years = st.slider("选择年份范围", min_year, max_year, (min_year, max_year), step=1)
-        digital_dimensions = ["人工智能词频数", "大数据词频数", "云计算词频数", "区块链词频数", "数字技术运用词频数"]
-        selected_dimensions = st.multiselect("选择技术维度", digital_dimensions, digital_dimensions)
-        min_index = st.number_input("最小数字化指数", 0.0, 100.0, 0.0, step=5.0)
-        st.divider()
-        st.info(f"📌 数据概览：{selected_years[0]}-{selected_years[1]}年 | {len(df_temp)}家企业")
-
-    # 读取并筛选数据
+# --------------------------
+# 数据加载（确保全年份覆盖）
+# --------------------------
+@st.cache_data
+def load_data():
     try:
-        df = pd.read_excel(file_path)
-        df = df.fillna(0)
-        df = df[(df["年份"] >= selected_years[0]) & (df["年份"] <= selected_years[1])]
-        
-        # 计算指数
-        df_scaled = StandardScaler().fit_transform(df[digital_dimensions])
-        pca = PCA(n_components=1)
-        pca_result = pca.fit_transform(df_scaled)
-        df["数字化转型指数"] = (pca_result - pca_result.min()) / (pca_result.max() - pca_result.min()) * 100
-        df["数字化转型指数"] = df["数字化转型指数"].round(2)
-        df = df[df["数字化转型指数"] >= min_index]
-
-        st.success(f"✅ 数据加载完成！有效数据：{len(df)}条")
+        with st.spinner("正在加载1999-2023年完整数据..."):
+            df = pd.read_excel(
+                r"C:\Users\31030\Desktop\aaxx\上市公司数字化合并总表.xlsx",
+                engine="openpyxl",
+                dtype={"股票代码": str}
+            )
+            # 强制保留1999-2023所有年份（补全缺失年份的空数据，避免折线断裂）
+            all_years = pd.DataFrame({'年份': list(range(1999, 2024))})  # 转成列表
+            df = pd.merge(all_years, df, on='年份', how='left')
+            # 补充行业列
+            if "行业" not in df.columns:
+                df["行业"] = "未分类"
+            return df
     except Exception as e:
-        st.error(f"❌ 数据处理失败：{str(e)}")
-        return
+        st.error(f"数据加载失败：{str(e)}")
+        st.stop()
 
-    # ---------------------- 功能1：企业查询 ----------------------
+# --------------------------
+# 核心功能函数
+# --------------------------
+def get_company_full_data(df, query):
+    """查询企业1999-2023所有年份数据"""
+    query = str(query).strip()
+    mask = (df['股票代码'].str.contains(query, na=False)) | (df['企业名称'].str.contains(query, na=False))
+    company_data = df[mask].copy()
+    # 强制补充1999-2023所有年份（确保折线图完整）
+    company_data = pd.merge(pd.DataFrame({'年份': list(range(1999, 2024))}), company_data, on='年份', how='left')  # 转成列表
+    # 填充企业名称/代码（避免空值）
+    if not company_data['企业名称'].dropna().empty:
+        company_data['企业名称'] = company_data['企业名称'].fillna(company_data['企业名称'].dropna().iloc[0])
+        company_data['股票代码'] = company_data['股票代码'].fillna(company_data['股票代码'].dropna().iloc[0])
+        company_data['行业'] = company_data['行业'].fillna(company_data['行业'].dropna().iloc[0])
+    return company_data.sort_values('年份') if not company_data.empty else None
+
+def plot_company_full_trend(company_data):
+    """绘制企业1999-2023全年份折线图（含所有指标）"""
+    company_name = company_data['企业名称'].iloc[0] if not company_data['企业名称'].isna().all() else "未知企业"
+    stock_code = company_data['股票代码'].iloc[0] if not company_data['股票代码'].isna().all() else "未知代码"
+    
+    # 创建多指标子图
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=("数字化转型指数趋势", "数字技术词频数趋势"),
+        vertical_spacing=0.15
+    )
+    
+    # 子图1：数字化转型指数
+    fig.add_trace(
+        go.Scatter(
+            x=company_data['年份'],
+            y=company_data['数字化转型指数'],
+            name='转型指数',
+            line=dict(color='#3b82f6', width=3),
+            marker=dict(size=6, color='#3b82f6'),
+            hovertemplate='年份: %{x}<br>指数: %{y:.2f}<extra></extra>'
+        ),
+        row=1, col=1
+    )
+    
+    # 子图2：各技术词频数
+    tech_cols = ['人工智能词频数', '大数据词频数', '云计算词频数', '区块链词频数']
+    colors = ['#10b981', '#f59e0b', '#8b5cf6', '#ec4899']
+    for col, color in zip(tech_cols, colors):
+        fig.add_trace(
+            go.Scatter(
+                x=company_data['年份'],
+                y=company_data[col],
+                name=col.replace('词频数', ''),
+                line=dict(color=color, width=2),
+                marker=dict(size=4),
+                hovertemplate='年份: %{x}<br>词频数: %{y}<extra></extra>'
+            ),
+            row=2, col=1
+        )
+    
+    # 图表样式优化
+    fig.update_layout(
+        title=f"{company_name}（{stock_code}）1999-2023数字化转型全趋势",
+        title_font=dict(size=18, weight='bold', color='#1e3a8a'),
+        width=900,
+        height=600,
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        legend=dict(orientation='h', yanchor='bottom', y=-0.2, xanchor='center', x=0.5),
+        margin=dict(l=20, r=20, t=80, b=80)
+    )
+    # 修正tickvals为列表
+    fig.update_xaxes(
+        title_text='年份',
+        tickvals=list(range(1999, 2024, 2)),  # 关键：range转列表
+        gridcolor='#e5e7eb',
+        row=1, col=1
+    )
+    fig.update_xaxes(
+        title_text='年份',
+        tickvals=list(range(1999, 2024, 2)),  # 关键：range转列表
+        gridcolor='#e5e7eb',
+        row=2, col=1
+    )
+    fig.update_yaxes(title_text='转型指数', gridcolor='#e5e7eb', row=1, col=1)
+    fig.update_yaxes(title_text='词频数', gridcolor='#e5e7eb', row=2, col=1)
+    return fig
+
+def plot_market_full_trend(df):
+    """绘制全市场1999-2023完整年份折线图"""
+    # 计算每年平均指数
+    market_trend = df.groupby('年份')['数字化转型指数'].mean().reset_index()
+    # 补全所有年份（确保折线连续）
+    market_trend = pd.merge(pd.DataFrame({'年份': list(range(1999, 2024))}), market_trend, on='年份', how='left')  # 转列表
+    
+    fig = px.line(
+        market_trend,
+        x='年份',
+        y='数字化转型指数',
+        title='全市场1999-2023年数字化转型指数平均趋势',
+        width=900,
+        height=400,
+        color_discrete_sequence=['#2563eb'],
+        template='plotly_white'
+    )
+    # 样式优化（修正tickvals为列表）
+    fig.update_layout(
+        title_font=dict(size=16, weight='bold'),
+        plot_bgcolor='white',
+        xaxis=dict(
+            title='年份',
+            tickvals=list(range(1999, 2024, 2)),  # 关键：range转列表
+            gridcolor='#e5e7eb'
+        ),
+        yaxis=dict(
+            title='平均转型指数',
+            gridcolor='#e5e7eb'
+        ),
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    # 添加趋势线（更直观）
+    fig.add_trace(
+        go.Scatter(
+            x=market_trend['年份'],
+            y=market_trend['数字化转型指数'].rolling(3).mean(),  # 3年移动平均
+            name='3年移动平均',
+            line=dict(color='#f59e0b', width=2, dash='dash'),
+            hovertemplate='年份: %{x}<br>平均指数: %{y:.2f}<extra></extra>'
+        )
+    )
+    return fig
+
+def plot_tech_comparison(df):
+    """绘制全市场各技术词频数年度平均对比"""
+    tech_trend = df.groupby('年份')[['人工智能词频数', '大数据词频数', '云计算词频数', '区块链词频数']].mean().reset_index()
+    tech_trend = pd.merge(pd.DataFrame({'年份': list(range(1999, 2024))}), tech_trend, on='年份', how='left')  # 转列表
+    
+    fig = px.line(
+        tech_trend,
+        x='年份',
+        y=['人工智能词频数', '大数据词频数', '云计算词频数', '区块链词频数'],
+        title='1999-2023年数字技术词频数全市场平均趋势',
+        width=900,
+        height=400,
+        color_discrete_map={
+            '人工智能词频数': '#10b981',
+            '大数据词频数': '#f59e0b',
+            '云计算词频数': '#8b5cf6',
+            '区块链词频数': '#ec4899'
+        },
+        template='plotly_white'
+    )
+    fig.update_layout(
+        title_font=dict(size=16, weight='bold'),
+        plot_bgcolor='white',
+        xaxis=dict(
+            title='年份',
+            tickvals=list(range(1999, 2024, 2)),  # 关键：range转列表
+            gridcolor='#e5e7eb'
+        ),
+        yaxis=dict(
+            title='平均词频数',
+            gridcolor='#e5e7eb'
+        ),
+        legend_title='技术类型',
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+    return fig
+
+# --------------------------
+# 页面布局
+# --------------------------
+def main():
+    st.markdown("<h1>📈 上市公司数字化转型全周期分析平台</h1>", unsafe_allow_html=True)
     st.divider()
-    with st.container():
-        st.markdown('<div class="card"><div class="section-title">🔍 企业精准查询</div>', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([2,2,1])
-        with col1: stock_code = st.text_input("股票代码（模糊匹配）")
-        with col2: company_name = st.text_input("企业名称（模糊匹配）")
-        with col3: st.markdown("<br>", unsafe_allow_html=True); search_btn = st.button("执行查询")
-
-        if search_btn or stock_code or company_name:
-            query_result = df.copy()
-            if stock_code: query_result = query_result[query_result["股票代码"].astype(str).str.contains(stock_code)]
-            if company_name: query_result = query_result[query_result["企业名称"].str.contains(company_name)]
-            
-            if not query_result.empty:
-                query_result = query_result.sort_values("数字化转型指数", ascending=False)
-                st.dataframe(query_result[["股票代码", "企业名称", "年份", "数字化转型指数"]+selected_dimensions], hide_index=True)
+    
+    # 加载数据
+    df = load_data()
+    
+    # 侧边栏（增强交互）
+    with st.sidebar:
+        st.markdown("<h2>🔍 企业精准查询</h2>", unsafe_allow_html=True)
+        query_input = st.text_input(
+            "输入股票代码/企业名称",
+            placeholder="例如：600000 / 浦发银行",
+            help="支持模糊查询，如输入“银行”匹配所有银行企业"
+        )
+        # 年份筛选器（可选）
+        st.markdown("<h3 style='margin-top: 1.5rem;'>📅 年份范围</h3>", unsafe_allow_html=True)
+        year_filter = st.slider(
+            "选择查看年份",
+            min_value=1999,
+            max_value=2023,
+            value=(1999, 2023),
+            step=1
+        )
+        st.markdown("---")
+        # 数据概览卡片（字体改为黑色）
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #000000; font-size: 1.2rem;'>数据概览</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #000000;'>📊 覆盖年份：1999-2023</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #000000;'>🏢 企业数量：{df['企业名称'].nunique()} 家</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #000000;'>📋 数据总量：{len(df):,} 条</p>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # 主内容标签页
+    tab1, tab2 = st.tabs(["🏢 企业全周期趋势", "📊 全市场整体分析"])
+    
+    # 标签1：企业全周期趋势（1999-2023完整数据）
+    with tab1:
+        st.markdown("<h2>企业1999-2023数字化转型全趋势</h2>", unsafe_allow_html=True)
+        if query_input:
+            company_data = get_company_full_data(df, query_input)
+            if company_data is not None and not company_data['企业名称'].isna().all():
+                # 企业信息卡片
+                st.markdown("<div class='card'>", unsafe_allow_html=True)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("股票代码", company_data['股票代码'].iloc[0])
+                with col2:
+                    st.metric("企业名称", company_data['企业名称'].iloc[0])
+                with col3:
+                    st.metric("所属行业", company_data['行业'].iloc[0])
+                st.markdown("</div>", unsafe_allow_html=True)
                 
-                # 企业维度柱状图（Altair实现，高级美观）
-                st.subheader("📈 企业维度词频分布")
-                selected_company = st.selectbox("选择企业", query_result["企业名称"].unique())
-                company_data = query_result[query_result["企业名称"] == selected_company].iloc[0]
-                dim_df = pd.DataFrame({"技术维度": selected_dimensions, "词频数": [company_data[dim] for dim in selected_dimensions]})
+                # 全年份折线图（核心）
+                st.markdown("<h3>1999-2023全指标趋势图</h3>", unsafe_allow_html=True)
+                st.plotly_chart(plot_company_full_trend(company_data), use_container_width=True)
                 
-                bar_chart = alt.Chart(dim_df).mark_bar(color="#4299e1").encode(
-                    x=alt.X("技术维度:N", axis=alt.Axis(labelAngle=-45)),
-                    y=alt.Y("词频数:Q"),
-                    tooltip=["技术维度", "词频数"]
-                ).properties(height=350, width=700)
-                st.altair_chart(bar_chart, use_container_width=True)
+                # 详细数据表格（筛选年份）
+                st.markdown("<h3>1999-2023详细数据</h3>", unsafe_allow_html=True)
+                filtered_data = company_data[(company_data['年份'] >= year_filter[0]) & (company_data['年份'] <= year_filter[1])]
+                st.dataframe(
+                    filtered_data[['年份', '数字化转型指数', '人工智能词频数', '大数据词频数', '云计算词频数', '区块链词频数']].set_index('年份'),
+                    use_container_width=True,
+                    height=300
+                )
             else:
-                st.warning("⚠️ 未找到匹配企业")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ---------------------- 功能2：年度趋势（修复图表参数） ----------------------
-    st.divider()
-    with st.container():
-        st.markdown('<div class="card"><div class="section-title">📅 年度数字化转型趋势</div>', unsafe_allow_html=True)
-        col1, col2 = st.columns(2)
-
-        # 左栏：年度指数趋势（Altair实现，支持自定义颜色）
-        with col1:
-            st.subheader("年度平均转型指数")
-            year_index_trend = df.groupby("年份")["数字化转型指数"].agg(["mean", "median", "max"]).round(2)
-            year_index_trend.columns = ["指数均值", "指数中位数", "指数最大值"]
-            trend_long = year_index_trend.reset_index().melt(id_vars="年份", var_name="指标", value_name="指数")
-            
-            # Altair线图（无参数冲突，颜色自定义）
-            line_chart = alt.Chart(trend_long).mark_line().encode(
-                x=alt.X("年份:O", axis=alt.Axis(labelAngle=0)),
-                y=alt.Y("指数:Q"),
-                color=alt.Color("指标:N", scale=alt.Scale(range=["#4299e1", "#38b2ac", "#ed64a6"])),
-                tooltip=["年份", "指标", "指数"]
-            ).properties(height=350, width=500)
-            st.altair_chart(line_chart, use_container_width=True)
-
-        # 右栏：维度词频趋势
-        with col2:
-            st.subheader("年度维度词频均值")
-            year_dim_trend = df.groupby("年份")[selected_dimensions].mean().round(2).reset_index().melt(id_vars="年份", var_name="维度", value_name="词频均值")
-            dim_line_chart = alt.Chart(year_dim_trend).mark_line().encode(
-                x="年份:O", y="词频均值:Q", color="维度:N", tooltip=["年份", "维度", "词频均值"]
-            ).properties(height=350, width=500)
-            st.altair_chart(dim_line_chart, use_container_width=True)
-
-        # 年度统计表格
-        st.subheader("年度数据统计")
-        year_summary = df.groupby("年份").agg({
-            "数字化转型指数": ["count", "mean", "median", "max", "min"],
-            "人工智能词频数": "mean"
-        }).round(2)
-        year_summary.columns = ["企业数量", "指数均值", "指数中位数", "指数最大值", "指数最小值", "AI词频均值"]
-        st.dataframe(year_summary, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ---------------------- 功能3：TOP榜单 ----------------------
-    st.divider()
-    with st.container():
-        st.markdown('<div class="card"><div class="section-title">🏆 数字化转型TOP榜单</div>', unsafe_allow_html=True)
-        top_n = st.slider("选择TOP数量", 5, 30, 10, step=5)
-        col1, col2 = st.columns(2)
-
-        # 年度TOP
-        with col1:
-            st.subheader(f"年度TOP{top_n}")
-            year_top = []
-            for year in sorted(df["年份"].unique()):
-                year_data = df[df["年份"] == year].sort_values("数字化转型指数", ascending=False).head(top_n)
-                year_data["年份排名"] = range(1, len(year_data)+1)
-                year_top.append(year_data)
-            st.dataframe(pd.concat(year_top)[["年份", "年份排名", "企业名称", "数字化转型指数"]], hide_index=True)
-
-        # 综合TOP
-        with col2:
-            st.subheader(f"综合TOP{top_n}")
-            company_top = df.loc[df.groupby("企业名称")["数字化转型指数"].idxmax()].sort_values("数字化转型指数", ascending=False).head(top_n)
-            company_top["综合排名"] = range(1, len(company_top)+1)
-            st.dataframe(company_top[["综合排名", "企业名称", "年份", "数字化转型指数"]], hide_index=True)
-
-        # TOP企业热力图（Altair实现）
-        st.subheader(f"TOP{top_n}企业维度热力图")
-        top_heatmap = company_top[["企业名称"]+selected_dimensions].set_index("企业名称").reset_index().melt(id_vars="企业名称", var_name="维度", value_name="词频")
-        heatmap = alt.Chart(top_heatmap).mark_rect().encode(
-            x=alt.X("企业名称:N", axis=alt.Axis(labelAngle=-45)),
-            y="维度:N",
-            color=alt.Color("词频:Q", scale=alt.Scale(scheme="blues")),
-            tooltip=["企业名称", "维度", "词频"]
-        ).properties(width=700, height=300)
-        st.altair_chart(heatmap, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+                st.warning("⚠️ 未找到匹配的企业，请检查输入内容")
+        else:
+            st.info("💡 请在左侧输入股票代码或企业名称，查询其1999-2023年完整数据")
+    
+    # 标签2：全市场整体分析（1999-2023完整折线）
+    with tab2:
+        st.markdown("<h2>全市场1999-2023数字化转型趋势</h2>", unsafe_allow_html=True)
+        
+        # 全市场转型指数折线（带移动平均）
+        st.markdown("<h3>全市场平均转型指数趋势</h3>", unsafe_allow_html=True)
+        st.plotly_chart(plot_market_full_trend(df), use_container_width=True)
+        
+        # 全市场技术词频数对比折线
+        st.markdown("<h3>全市场数字技术词频数趋势对比</h3>", unsafe_allow_html=True)
+        st.plotly_chart(plot_tech_comparison(df), use_container_width=True)
+        
+        # 年度数据分布箱线图（增强分析）
+        st.markdown("<h3>1999-2023年转型指数年度分布</h3>", unsafe_allow_html=True)
+        box_fig = px.box(
+            df,
+            x='年份',
+            y='数字化转型指数',
+            title='各年度转型指数分布（箱线图）',
+            width=900,
+            height=400,
+            template='plotly_white'
+        )
+        box_fig.update_layout(
+            plot_bgcolor='white',
+            xaxis=dict(
+                tickvals=list(range(1999, 2024, 3)),  # 关键：range转列表
+                tickangle=45, 
+                gridcolor='#e5e7eb'
+            ),
+            yaxis=dict(gridcolor='#e5e7eb'),
+            margin=dict(l=20, r=20, t=60, b=40)
+        )
+        st.plotly_chart(box_fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
