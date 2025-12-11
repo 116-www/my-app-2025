@@ -51,14 +51,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --------------------------
-# 数据加载（确保全年份覆盖）
+# 数据加载（适配云端部署，修复路径问题）
 # --------------------------
 @st.cache_data
 def load_data():
     try:
         with st.spinner("正在加载1999-2023年完整数据..."):
+            # 云端用相对路径（删除本地绝对路径，仅保留文件名）
             df = pd.read_excel(
-                r"C:\Users\31030\Desktop\aaxx\上市公司数字化合并总表.xlsx",
+                "上市公司数字化合并总表.xlsx",  # 关键修改：仅保留文件名
                 engine="openpyxl",
                 dtype={"股票代码": str}
             )
@@ -69,6 +70,9 @@ def load_data():
             if "行业" not in df.columns:
                 df["行业"] = "未分类"
             return df
+    except FileNotFoundError:
+        st.error("❌ 未找到Excel数据文件，请确认文件名为「上市公司数字化合并总表.xlsx」且与代码同目录")
+        st.stop()
     except Exception as e:
         st.error(f"数据加载失败：{str(e)}")
         st.stop()
